@@ -7,18 +7,20 @@ image_A = misc.imread('A.png')[:,:,0:3]
 image_B = misc.imread('B.png')[:,:,0:3]
 h, w, dim = image_A.shape
 
-# Create initial set of paths
-max_displacement = 15
-min_displacement = -15
-range_displacement = max_displacement - min_displacement + 1
-all_paths = np.zeros((range_displacement*range_displacement, 2), 'int16')
+all_paths = generate_all_paths(-15, 15)
 
-counter = 0
-for dy in range(min_displacement, max_displacement):
-    for dx in range(min_displacement, max_displacement):
-        all_paths[counter, 0] = dy
-        all_paths[counter, 1] = dx
-        counter += 1
+
+def generate_all_paths(min_displacement, max_displacement):
+    range_displacement = max_displacement - min_displacement + 1
+    all_paths = np.zeros((range_displacement*range_displacement, 2), 'int16')
+
+    counter = 0
+    for dy in range(min_displacement, max_displacement):
+        for dx in range(min_displacement, max_displacement):
+            all_paths[counter, 0] = dy
+            all_paths[counter, 1] = dx
+            counter += 1
+    return all_paths
 
 def matching_cost(pA, pB, A, B, gradient_A, gradient_B, variance_A, variance_B, beta):
     Ay, Ax = pA
