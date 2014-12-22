@@ -15,6 +15,9 @@ def generate_all_paths(min_displacement, max_displacement):
             counter += 1
     return all_paths
 
+def coherency_cost(path, neighbour_path, delta):
+    return min(np.sqrt(np.sum(np.power(np.subtract(path, neighbour_path), 2))), delta)
+
 def matching_cost(pA, pB, A, B, gradient_A, gradient_B, variance_A, variance_B, beta):
     Ay, Ax = pA
     By, Bx = pB
