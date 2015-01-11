@@ -1,40 +1,49 @@
 import numpy as np
+from numba import jit
 
-def make_line(y0, x0, y1, x1):
-    is_steep = abs(y1 - y0) > abs(x1 - x0)
+@jit('void(i2, i2, i2, i2, i2[:, :])', target='cpu', nopython=True)
+def make_line(y0, x0, y1, x1, line):
+    is_steep = np.abs(y1 - y0) > np.abs(x1 - x0)
     if is_steep:
-        x0, y0 = y0, x0
-        x1, y1 = y1, x1
+        tmp = x0
+        x0 = y0
+        y0 = tmp
+
+        tmp = x1
+        x1 = y1
+        y1 = tmp
 
     if x0 > x1:
-        x0, x1 = x1, x0
-        y0, y1 = y1, y0
+        tmp = x0
+        x0 = x1
+        x1 = tmp
+
+        tmp = y0
+        y0 = y1
+        y1 = tmp
 
     if y0 > y1:
         y_step = -1
     else:
         y_step = 1
 
-    line = np.zeros((max(abs(x1 - x0), abs(y1 - y0)) + 1, 2))
     currentPoint = 0
 
-    err_increment = abs(y1 - y0)
+    err_increment = np.abs(y1 - y0)
     dx = x1 - x0
 
     err = dx >> 1
     y = y0
 
-    print x0, y0, x1, y1, err, err_increment
-
     for x in range(x0, x1 + 1):
         if is_steep:
-            line[currentPoint, :] = [x, y]
+            line[currentPoint, 0] = x
+            line[currentPoint, 1] = y
         else:
-            line[currentPoint, :] = [y, x]
+            line[currentPoint, 0] = y
+            line[currentPoint, 1] = x
         err -= err_increment
         if err < 0:
             y += y_step
             err += dx
         currentPoint += 1
-
-    return line
