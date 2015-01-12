@@ -21,7 +21,7 @@ def generate_all_paths(min_displacement, max_displacement):
 def coherency_cost(path, neighbour_path, delta):
     return min(np.sqrt(np.sum(np.power(np.subtract(path, neighbour_path), 2))), delta)
 
-@jit('f8(i2, i2, i2, i2, i4[:,:,:], i4[:,:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
+@jit('f8(i2, i2, i2, i2, f8[:,:,:], f8[:,:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
 def matching_cost(Ay, Ax, By, Bx, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
     # beta is equivalent to alpha divided by 4, where alpha is the power used in the paper
     # examples use alpha = 8 => beta = 2
@@ -61,7 +61,7 @@ def variance_4_neighbourhood(values):
             variance[y, x] = np.true_divide(sum_squared_neighbourhood - np.true_divide(np.power(sum_neighbourhood, 2), n), n)
     return variance
 
-@jit('void(f8[:,:], i2, i4[:,:,:], i4[:,:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
+@jit('void(f8[:,:,:,:], i2, f8[:,:,:], f8[:,:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
 def compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
     h, w, dim = image_A.shape
     for y in range(0, h):
@@ -69,7 +69,7 @@ def compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradie
             for dy in range(-max_displacement, max_displacement + 1):
                 for dx in range(-max_displacement, max_displacement + 1):
                     if ((y + dy) < h) and ((y + dy) >= 0) and ((x + dx) < w) and ((x + dx) >= 0):
-                        all_costs[y*h + x, (dy+max_displacement) * (2*max_displacement+1) + (dx+max_displacement)] = matching_cost(y, x, y + dy, x + dx, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta)
+                        all_costs[y, x, dy+max_displacement, dx+max_displacement] = matching_cost(y, x, y + dy, x + dx, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta)
 
 
 @jit(target='cpu', nopython=True)
@@ -81,7 +81,7 @@ def calculate_unary_costs(unary_cost_matrix, paths, single_path, all_costs, max_
         for x in range(0, w):
             for path_number in range(0, number_paths):
                 path = paths[path_number, :]
-                best_correspondence = np.inf
+                best_correspondence = 10000
                 best_transition_point_y = y
                 best_transition_point_x = x
                 dy, dx = path
@@ -92,18 +92,18 @@ def calculate_unary_costs(unary_cost_matrix, paths, single_path, all_costs, max_
                     for p in range(0, number_points):
                         dy2 = single_path[p, 0] - y
                         dx2 = single_path[p, 1] - x
-                        current_correspondence = all_costs[y*h + x, (dy2 + max_displacement)*(2*max_displacement + 1) + (dx2 + max_displacement)]
+                        current_correspondence = all_costs[y, x, dy2 + max_displacement, dx2 + max_displacement]
                         if current_correspondence < best_correspondence:
                             best_correspondence = current_correspondence
                             best_transition_point_y = single_path[p, 0]
                             best_transition_point_x = single_path[p, 1]
-                    unary_cost_matrix[y*h + x, path_number, 0] = best_correspondence
-                    unary_cost_matrix[y*h + x, path_number, 1] = best_transition_point_y
-                    unary_cost_matrix[y*h + x, path_number, 2] = best_transition_point_x
+                    unary_cost_matrix[y, x, path_number, 0] = best_correspondence
+                    unary_cost_matrix[y, x, path_number, 1] = best_transition_point_y
+                    unary_cost_matrix[y, x, path_number, 2] = best_transition_point_x
                 else:
-                    unary_cost_matrix[y*h + x, path_number, 0] = np.inf
-                    unary_cost_matrix[y*h + x, path_number, 1] = y
-                    unary_cost_matrix[y*h + x, path_number, 2] = x
+                    unary_cost_matrix[y, x, path_number, 0] = 10000
+                    unary_cost_matrix[y, x, path_number, 1] = y
+                    unary_cost_matrix[y, x, path_number, 2] = x
 
 @jit('void(i2[:,:], i4, f8[:,:])', target='cpu', nopython=True)
 def calculate_pairwise_costs(all_paths, delta, smooth_costs):
@@ -116,8 +116,8 @@ def calculate_pairwise_costs(all_paths, delta, smooth_costs):
 # def main():
 print("Initial setup...")
 start = timeit.default_timer()
-image_A = misc.imread('A.png')[:,:,0:3].astype('int32')
-image_B = misc.imread('B.png')[:,:,0:3].astype('int32')
+image_A = misc.imread('A.png')[:,:,0:3].astype('float64') / 255.0
+image_B = misc.imread('B.png')[:,:,0:3].astype('float64') / 255.0
 h, w, dim = image_A.shape
 beta = np.int32(2)
 delta = np.int32(20) # see paper for other values used
@@ -148,14 +148,13 @@ all_paths = generate_all_paths(-max_displacement, max_displacement)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
-number_pixels = h*w
 number_paths = all_paths.shape[0]
 
 print("Calculate unary costs...")
 start = timeit.default_timer()
-unaries = np.zeros((number_pixels, number_paths, 3))
+unaries = np.zeros((h, w, number_paths, 3))
 single_path = np.zeros((max_displacement+1,2), dtype=np.int16)
-all_costs = np.zeros((h*w, (2*max_displacement+1)*(2*max_displacement+1)))
+all_costs = np.zeros((h, w, 2*max_displacement+1, 2*max_displacement+1))
 compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta)
 calculate_unary_costs(unaries, all_paths, single_path, all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta)
 stop = timeit.default_timer()
@@ -168,21 +167,26 @@ calculate_pairwise_costs(all_paths, delta, smooth_costs)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
+print("Assigning labels...")
+start = timeit.default_timer()
+
+# result = cut_simple(((1000*unaries[:,:,:,0]).copy("C")).astype('int32'), ((smooth_costs).copy("C")).astype('int32'))
+stop = timeit.default_timer()
+print("[%.4fs]" % (stop - start))
+
 # py = 15
 # px = 15
-# pind = py*64 + px
 # print("Pixel is (%d, %d)" % (py, px))
-# print("Index is %d" % (pind))
 # #find best correspondence
 # bestcost = np.inf
 # trans_y = 0
 # trans_x = 0
 # path_index = -1
-# for i in range(0, unaries.shape[1]):
-#     if unaries[pind, i, 0] < bestcost:
-#         bestcost = unaries[pind, i, 0]
-#         trans_y = unaries[pind, i, 1]
-#         trans_x = unaries[pind, i, 2]
+# for i in range(0, unaries.shape[2]):
+#     if unaries[py, px, i, 0] < bestcost:
+#         bestcost = unaries[py, px, i, 0]
+#         trans_y = unaries[py, px, i, 1]
+#         trans_x = unaries[py, px, i, 2]
 #         path_index = i
 # path_dy = all_paths[path_index, 0]
 # path_dx = all_paths[path_index, 1]
