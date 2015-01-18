@@ -49,46 +49,47 @@ def coherency_cost(path, neighbour_path, delta):
 
 @jit(target='cpu', nopython=True)
 def compute_gradient(image, gradient):
-    # compute spatial gradient of color image of size h x w x num_colors, output is h x w x 2 x num_colors
+    # compute spatial gradient of grayscale image of size h x w, output is h x w x 2
     h = image.shape[0]
     w = image.shape[1]
-    num_colors = image.shape[2]
 
     for y in range(0, h):
         for x in range(0, w):
-            for c in range(0, num_colors):
-                if (y > 0) and (y < (h - 1)):
-                    dy = 0.5*(image[y+1,x,c] - image[y-1,x,c])
-                elif (y > 0):
-                    dy = image[y,x,c] - image[y-1,x,c]
-                elif (y < (h - 1)):
-                    dy = image[y+1,x,c] - image[y,x,c]
-                if (x > 0) and (x < (w - 1)):
-                    dx = 0.5*(image[y,x+1,c] - image[y,x-1,c])
-                elif (x > 0):
-                    dx = image[y,x,c] - image[y,x-1,c]
-                elif (x < (w - 1)):
-                    dx = image[y,x+1,c] - image[y,x,c]
-                gradient[y,x,0,c] = dy
-                gradient[y,x,1,c] = dx
+            if (y > 0) and (y < (h - 1)):
+                dy = 0.5*(image[y+1,x] - image[y-1,x])
+            elif (y > 0):
+                dy = image[y,x] - image[y-1,x]
+            elif (y < (h - 1)):
+                dy = image[y+1,x] - image[y,x]
+            if (x > 0) and (x < (w - 1)):
+                dx = 0.5*(image[y,x+1] - image[y,x-1])
+            elif (x > 0):
+                dx = image[y,x] - image[y,x-1]
+            elif (x < (w - 1)):
+                dx = image[y,x+1] - image[y,x]
+            gradient[y,x,0] = dy
+            gradient[y,x,1] = dx
 
-@jit('f8(i2, i2, i2, i2, f8[:,:,:], f8[:,:,:], f8[:,:,:,:], f8[:,:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
+@jit('f8(i2, i2, i2, i2, f8[:,:], f8[:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
 def matching_cost(Ay, Ax, By, Bx, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
     # beta is equivalent to alpha divided by 4, where alpha is the power used in the paper
     # examples use alpha = 8 => beta = 2
-    color_diff = np.power(image_A[Ay, Ax, 0] - image_B[By, Bx, 0], 2) + np.power(image_A[Ay, Ax, 1] - image_B[By, Bx, 1], 2) + np.power(image_A[Ay, Ax, 2] - image_B[By, Bx, 2], 2)
-    gradient_diff_r = (gradient_A[Ay, Ax, 0, 0] - gradient_B[By, Bx, 0, 0])**2 + (gradient_A[Ay, Ax, 1, 0] - gradient_B[By, Bx, 1, 0])**2
-    gradient_diff_g = (gradient_A[Ay, Ax, 0, 1] - gradient_B[By, Bx, 0, 1])**2 + (gradient_A[Ay, Ax, 1, 1] - gradient_B[By, Bx, 1, 1])**2
-    gradient_diff_b = (gradient_A[Ay, Ax, 0, 2] - gradient_B[By, Bx, 0, 2])**2 + (gradient_A[Ay, Ax, 1, 2] - gradient_B[By, Bx, 1, 2])**2
-    gradient_diff = (gradient_diff_r + gradient_diff_g + gradient_diff_b) / 3.0
+    color_diff = np.power(image_A[Ay, Ax] - image_B[By, Bx], 2)
+    gradient_diff = (gradient_A[Ay, Ax, 0] - gradient_B[By, Bx, 0])**2 + (gradient_A[Ay, Ax, 1] - gradient_B[By, Bx, 1])**2
     q = gradient_diff + 0.5*color_diff
 
-    # Add 1 to the variance to avoid dividing by zero - any neighborhood with no gradient is hence not normalized (I don't think this should make a big difference)
-    return np.power(np.true_divide(np.power(q, 2), (variance_A[Ay, Ax] + 1) * (variance_B[By, Bx] + 1)), beta)
+    var_A = variance_A[Ay, Ax]
+    if var_A == 0:
+        var_A = 1
+    var_B = variance_B[By, Bx]
+    if var_B == 0:
+        var_B = 1
+
+    return np.power(np.true_divide(np.power(q, 2), var_A * var_B), beta)
 
 def variance_4_neighbourhood(values):
     # numerically stable variance by using shifted data
-    h, w, dim = values.shape
+    h, w = values.shape
     variance = np.zeros((h,w), dtype='int32')
     for y in range(0, h):
         for x in range(0, w):
@@ -98,20 +99,20 @@ def variance_4_neighbourhood(values):
             sum_squared_neighbourhood = 0
             if y > 0:
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y - 1, x, :], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y - 1, x, :], K), 2))
+                sum_neighbourhood += np.sum(np.subtract(values[y - 1, x], K))
+                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y - 1, x], K), 2))
             if y < (h - 1):
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y + 1, x, :], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y + 1, x, :], K), 2))
+                sum_neighbourhood += np.sum(np.subtract(values[y + 1, x], K))
+                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y + 1, x], K), 2))
             if x > 0:
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y, x - 1, :], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x - 1, :], K), 2))
+                sum_neighbourhood += np.sum(np.subtract(values[y, x - 1], K))
+                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x - 1], K), 2))
             if x < (w - 1):
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y, x + 1, :], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x + 1, :], K), 2))
+                sum_neighbourhood += np.sum(np.subtract(values[y, x + 1], K))
+                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x + 1], K), 2))
             variance[y, x] = np.true_divide(sum_squared_neighbourhood - np.true_divide(np.power(sum_neighbourhood, 2), n), n)
     return variance
 
@@ -122,9 +123,9 @@ def in_bounds(y, x, h, w):
     else:
         return 0
 
-@jit('void(f8[:,:,:,:], i2, f8[:,:,:], f8[:,:,:], f8[:,:,:,:], f8[:,:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
+@jit('void(f8[:,:,:,:], i2, f8[:,:], f8[:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
 def compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
-    h, w, dim = image_A.shape
+    h, w = image_A.shape
     for y in range(0, h):
         for x in range(0, w):
             for dy in range(-max_displacement, max_displacement + 1):
@@ -136,7 +137,7 @@ def compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradie
 @jit(target='cpu', nopython=True)
 def calculate_unary_costs(unary_cost_matrix, paths, single_path, all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
     # single_path is an array large enough to hold any single path since no array creation is possible inside this function due to numba
-    h, w, dim = image_A.shape
+    h, w = image_A.shape
     number_paths = paths.shape[0]
     for y in range(0, h):
         for x in range(0, w):
@@ -147,9 +148,9 @@ def calculate_unary_costs(unary_cost_matrix, paths, single_path, all_costs, max_
                 pBy = y - path[2]
                 pBx = x - path[3]
                 if (in_bounds(pAy, pAx, h, w) == 1) and (in_bounds(pBy, pBx, h, w) == 1):
-                    unary_cost_matrix[y, x, path_number] = all_costs[pAy, pAx, pBy - pAy + max_displacement, pBx - pAx + max_displacement]
+                    unary_cost_matrix[y, x, path_number] = min(100000000000000000*(all_costs[pAy, pAx, pBy - pAy + max_displacement, pBx - pAx + max_displacement]), 10000000)
                 else:
-                    unary_cost_matrix[y, x, path_number] = 100000
+                    unary_cost_matrix[y, x, path_number] = 10000000
 
 @jit('void(i2[:,:], i4, f8[:,:])', target='cpu', nopython=True)
 def calculate_pairwise_costs(all_paths, delta, smooth_costs):
@@ -162,12 +163,13 @@ def calculate_pairwise_costs(all_paths, delta, smooth_costs):
 # def main():
 print("Initial setup...")
 start = timeit.default_timer()
-image_A = misc.imread('A.png')[:,:,0:3].astype('float64') / 255.0
-image_B = misc.imread('B.png')[:,:,0:3].astype('float64') / 255.0
-h, w, dim = image_A.shape
+image_A = misc.imread('A.png')[:,:,0].astype('float64') / 255.0
+image_B = misc.imread('B.png')[:,:,0].astype('float64') / 255.0
+h, w = image_A.shape
 beta = np.int32(2)
 delta = np.int32(20) # see paper for other values used
 max_displacement = np.int32(4)
+intermediate_frames = 18
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
@@ -181,9 +183,9 @@ print("[%.4fs]" % (stop - start))
 
 print("Calculating image gradients...")
 start = timeit.default_timer()
-gradient_A= np.zeros((h, w, 2, 3))
+gradient_A= np.zeros((h, w, 2))
 compute_gradient(image_A, gradient_A)
-gradient_B= np.zeros((h, w, 2, 3))
+gradient_B= np.zeros((h, w, 2))
 compute_gradient(image_B, gradient_B)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
@@ -209,8 +211,8 @@ print("[%.4fs]" % (stop - start))
 print("Calculate pairwise costs...")
 start = timeit.default_timer()
 smooth_costs = np.zeros((number_paths, number_paths))
-smooth_costs_int = ((np.ceil(10*smooth_costs)).copy("C")).astype('int32')
 calculate_pairwise_costs(all_paths, delta, smooth_costs)
+smooth_costs_int = (np.ceil(10*smooth_costs)).astype('int32')
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
@@ -226,34 +228,10 @@ print("[%.4fs]" % (stop - start))
 
 print("Assigning labels...")
 start = timeit.default_timer()
-result = cut_simple(((1000*unaries).copy("C")).astype('int32'), smooth_costs_int)
-# plt.plot(np.sort(np.reshape(unaries, (h*w*number_paths))), 'ro')
-# plt.show()
+unaries_int = unaries.astype('int32')
+result = cut_simple(unaries_int, smooth_costs_int)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
-
-
-# py = 15
-# px = 15
-# print("Pixel is (%d, %d)" % (py, px))
-# #find best correspondence
-# bestcost = np.inf
-# trans_y = 0
-# trans_x = 0
-# path_index = -1
-# for i in range(0, unaries.shape[2]):
-#     if unaries[py, px, i, 0] < bestcost:
-#         bestcost = unaries[py, px, i, 0]
-#         trans_y = unaries[py, px, i, 1]
-#         trans_x = unaries[py, px, i, 2]
-#         path_index = i
-# path_dy = all_paths[path_index, 0]
-# path_dx = all_paths[path_index, 1]
-
-# print("Best correspondence score is %.4f, path index %d" % (bestcost, path_index))
-# print("The path has displacement (%d, %d), and transition point (%d, %d)" % (path_dy, path_dx, trans_y, trans_x))
-# trans_correspondence = matching_cost(py, px, trans_y, trans_x, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta)
-# print("Actual correspondence is %.4f" % trans_correspondence)
 
 # if __name__ == "__main__":
 #     main()
