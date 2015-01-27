@@ -87,10 +87,10 @@ def matching_cost(Ay, Ax, By, Bx, image_A, image_B, gradient_A, gradient_B, vari
 
     return np.power(np.true_divide(np.power(q, 2), var_A * var_B), beta)
 
-def variance_4_neighbourhood(values):
+@jit('void(f8[:,:],f8[:,:])',target='cpu', nopython=True)
+def variance_4_neighbourhood(values, variance):
     # numerically stable variance by using shifted data
     h, w = values.shape
-    variance = np.zeros((h,w), dtype='int32')
     for y in range(0, h):
         for x in range(0, w):
             K = values[y,x]
@@ -99,22 +99,21 @@ def variance_4_neighbourhood(values):
             sum_squared_neighbourhood = 0
             if y > 0:
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y - 1, x], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y - 1, x], K), 2))
+                sum_neighbourhood += values[y - 1, x] - K
+                sum_squared_neighbourhood += (values[y - 1, x] - K)**2
             if y < (h - 1):
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y + 1, x], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y + 1, x], K), 2))
+                sum_neighbourhood += values[y + 1, x] - K
+                sum_squared_neighbourhood += (values[y + 1, x] - K)**2
             if x > 0:
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y, x - 1], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x - 1], K), 2))
+                sum_neighbourhood += values[y, x - 1] - K
+                sum_squared_neighbourhood += (values[y, x - 1] - K)**2
             if x < (w - 1):
                 n += 1
-                sum_neighbourhood += np.sum(np.subtract(values[y, x + 1], K))
-                sum_squared_neighbourhood += np.sum(np.power(np.subtract(values[y, x + 1], K), 2))
+                sum_neighbourhood += values[y, x + 1] - K
+                sum_squared_neighbourhood += (values[y, x + 1] - K)**2
             variance[y, x] = np.true_divide(sum_squared_neighbourhood - np.true_divide(np.power(sum_neighbourhood, 2), n), n)
-    return variance
 
 @jit(target='cpu', nopython=True)
 def in_bounds(y, x, h, w):
@@ -123,7 +122,7 @@ def in_bounds(y, x, h, w):
     else:
         return 0
 
-@jit('void(f8[:,:,:,:], i2, f8[:,:], f8[:,:], f8[:,:,:], f8[:,:,:], i4[:,:], i4[:,:], i4)',target='cpu', nopython=True)
+@jit('void(f8[:,:,:,:], i2, f8[:,:], f8[:,:], f8[:,:,:], f8[:,:,:], f8[:,:], f8[:,:], i4)',target='cpu', nopython=True)
 def compute_matching_costs(all_costs, max_displacement, image_A, image_B, gradient_A, gradient_B, variance_A, variance_B, beta):
     h, w = image_A.shape
     for y in range(0, h):
@@ -198,8 +197,8 @@ def bilinear_interp(image, y, x):
 # def main():
 print("Initial setup...")
 start = timeit.default_timer()
-image_A = misc.imread('A.png')[:,:,0].astype('float64') / 255.0
-image_B = misc.imread('B.png')[:,:,0].astype('float64') / 255.0
+image_A = misc.imread('A.png')[:,:,0].astype('float64')
+image_B = misc.imread('B.png')[:,:,0].astype('float64')
 h, w = image_A.shape
 beta = np.int32(2)
 delta = np.int32(20) # see paper for other values used
@@ -211,8 +210,10 @@ print("[%.4fs]" % (stop - start))
 
 print("Calculating local variance...")
 start = timeit.default_timer()
-variance_A = variance_4_neighbourhood(image_A)
-variance_B = variance_4_neighbourhood(image_B)
+variance_A = np.zeros((h,w), dtype=np.float64)
+variance_4_neighbourhood(image_A, variance_A)
+variance_B = np.zeros((h,w), dtype=np.float64)
+variance_4_neighbourhood(image_B, variance_B)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
