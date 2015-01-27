@@ -21,20 +21,24 @@ def generate_interpolated_frame(frame, image_A, image_B, result, all_paths, f, i
     for y in range(0, h):
         for x in range(0, w):
             path = all_paths[result[y,x], :]
-            full_path_length = np.sqrt(np.power(path[0] + path[2], 2) + np.power(path[1] + path[3], 2))
-            first_path_length = np.sqrt(np.power(path[0], 2) + np.power(path[1], 2))
+            path_A_length = np.sqrt(np.power(path[0], 2) + np.power(path[1], 2))
+            path_B_length = np.sqrt(np.power(path[2], 2) + np.power(path[3], 2))
+            full_path_length = path_A_length + path_B_length
+            fraction_of_full_path = np.true_divide(f, intermediate_frames - 1)
+
             if full_path_length <= np.spacing(1):
-                transition_point = 0
-            elif full_path_length == first_path_length:
-                transition_point = 0
+                frame[y, x] = image_A[y,x]
             else:
-                transition_point = np.true_divide(first_path_length, full_path_length)
-            if transition_point <= np.true_divide(f, intermediate_frames - 1):
-                image = image_A
-                y_interp = y + np.true_divide(f, intermediate_frames - 1) * (path[0] + path[2])
-                x_interp = x + np.true_divide(f, intermediate_frames - 1) * (path[1] + path[3])
-            else:
-                image = image_B
-                y_interp = y - np.true_divide(f, intermediate_frames - 1) * (path[0] + path[2])
-                x_interp = x - np.true_divide(f, intermediate_frames - 1) * (path[1] + path[3])
-            frame[y, x] = bilinear_interp(image, y_interp, x_interp)
+                if full_path_length == path_A_length:
+                    transition_point = 0
+                else:
+                    transition_point = np.true_divide(path_A_length, full_path_length)
+                if path_A_length == 0 or transition_point > fraction_of_full_path:
+                    image = image_B
+                    y_interp = y - np.true_divide((1 - fraction_of_full_path) * full_path_length, path_B_length) * path[2]
+                    x_interp = x - np.true_divide((1 - fraction_of_full_path) * full_path_length, path_B_length) * path[3]
+                else:
+                    image = image_A
+                    y_interp = y + np.true_divide(fraction_of_full_path * full_path_length, path_A_length) * path[0]
+                    x_interp = x + np.true_divide(fraction_of_full_path * full_path_length, path_A_length) * path[1]
+                frame[y, x] = bilinear_interp(image, y_interp, x_interp)
