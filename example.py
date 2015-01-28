@@ -5,12 +5,13 @@ import timeit
 import precompute
 import interpolation
 import gradients
-from scipy import misc
+import occlusion
+from cv2 import imread, imwrite
 
 print("Initial setup...")
 start = timeit.default_timer()
-image_A = misc.imread('A.png')[:,:,0].astype('float64')
-image_B = misc.imread('B.png')[:,:,0].astype('float64')
+image_A = imread('A.png')[:,:,0].astype('float64')
+image_B = imread('B.png')[:,:,0].astype('float64')
 height, width = image_A.shape
 beta = np.int32(2)
 delta = np.int32(20) # see paper for other values used
@@ -79,11 +80,19 @@ result = cut_simple(unaries_int, smooth_costs_int)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 
+print("Handling occlusions...")
+start = timeit.default_timer()
+occlusions = np.zeros((height, width))
+occlusion.find_occlusions(result, all_paths, occlusions)
+imwrite('output/occlusions.png', occlusions*255)
+stop = timeit.default_timer()
+print("[%.4fs]" % (stop - start))
+
 print("Interpolate images...")
 start = timeit.default_timer()
 frame = np.zeros_like(image_A)
 for f in range(0, intermediate_frames):
     interpolation.generate_interpolated_frame(frame, image_A, image_B, result, all_paths, f, intermediate_frames)
-    misc.imsave('output/%02d.png' % f, frame)
+    imwrite('output/%02d.png' % f, frame)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))

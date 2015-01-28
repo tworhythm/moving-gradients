@@ -101,3 +101,12 @@ def compute_gradient(image, gradient):
                 dx = image[y,x+1] - image[y,x]
             gradient[y,x,0] = dy
             gradient[y,x,1] = dx
+
+@jit(target='cpu', nopython=True)
+def compute_flow(flow, assigned_paths, all_paths):
+    h, w, dim = flow.shape
+    for y in range(0, h):
+        for x in range(0, w):
+            path_number = assigned_paths[y, x]
+            flow[y, x, 0] = all_paths[path_number, 0] + all_paths[path_number, 2]
+            flow[y, x, 1] = all_paths[path_number, 1] + all_paths[path_number, 3]
