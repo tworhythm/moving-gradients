@@ -82,9 +82,10 @@ print("[%.4fs]" % (stop - start))
 
 print("Handling occlusions...")
 start = timeit.default_timer()
-occlusions = np.zeros((height, width))
+occlusions = np.zeros((height, width, 2))
 occlusion.find_occlusions(result, all_paths, occlusions)
-imwrite('output/occlusions.png', occlusions*255)
+imwrite('output/occlusions_forward.png', occlusions[:,:,0]*255)
+imwrite('output/occlusions_backward.png', occlusions[:,:,1]*255)
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 

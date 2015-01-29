@@ -10,10 +10,11 @@ def find_occlusions(assigned_paths, all_paths, occlusions):
     backward_flow = np.zeros((h, w, 2))
     precompute.compute_flow(backward_flow, assigned_paths, all_paths)
     forward_flow_verification(forward_flow, backward_flow, occlusions)
+    backward_flow_verification(forward_flow, backward_flow, occlusions)
 
 @jit(target='cpu', nopython=True)
 def forward_flow_verification(forward_flow, backward_flow, occlusions):
-    h, w = occlusions.shape
+    h, w, dim = occlusions.shape
     for y in range(0, h):
         for x in range(0, w):
             vAy = forward_flow[y,x,0]
@@ -22,6 +23,21 @@ def forward_flow_verification(forward_flow, backward_flow, occlusions):
             vBx = backward_flow[y + vAy, x + vAx, 1]
 
             if vAy == -vBy and vAx == -vBx:
-                occlusions[y,x] = 0
+                occlusions[y,x,0] = 0
             else:
-                occlusions[y,x] = 1
+                occlusions[y,x,0] = 1
+
+@jit(target='cpu', nopython=True)
+def backward_flow_verification(forward_flow, backward_flow, occlusions):
+    h, w, dim = occlusions.shape
+    for y in range(0, h):
+        for x in range(0, w):
+            vBy = backward_flow[y,x,0]
+            vBx = backward_flow[y,x,1]
+            vAy = forward_flow[y + vBy, x + vBx, 0]
+            vAx = forward_flow[y + vBy, x + vBx, 1]
+
+            if vAy == -vBy and vAx == -vBx:
+                occlusions[y,x,1] = 0
+            else:
+                occlusions[y,x,1] = 1
