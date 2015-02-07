@@ -59,7 +59,7 @@ print("Calculate pairwise costs...")
 start = timeit.default_timer()
 smooth_costs = np.zeros((number_paths, number_paths))
 gradients.calculate_pairwise_costs(all_paths, delta, smooth_costs)
-smooth_costs_int = (np.ceil(10*smooth_costs)).astype('int32')
+smooth_costs_int = (np.ceil(15*smooth_costs)).astype('int32')
 stop = timeit.default_timer()
 print("[%.4fs]" % (stop - start))
 

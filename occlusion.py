@@ -1,16 +1,19 @@
 import numpy as np
 import precompute
 from numba import jit
+from scipy.ndimage import label
 
 def find_occlusions(assigned_paths, all_paths, occlusions):
     h, w = assigned_paths.shape
     forward_flow = np.zeros((h, w, 2))
-    precompute.compute_flow(forward_flow, assigned_paths, all_paths)
-    forward_flow = - forward_flow
+    precompute.compute_forward_flow(forward_flow, assigned_paths, all_paths)
     backward_flow = np.zeros((h, w, 2))
-    precompute.compute_flow(backward_flow, assigned_paths, all_paths)
+    precompute.compute_backward_flow(backward_flow, assigned_paths, all_paths)
     forward_flow_verification(forward_flow, backward_flow, occlusions)
     backward_flow_verification(forward_flow, backward_flow, occlusions)
+
+    occlusion_regions, num_regions = label(occlusions[:,:,0])
+    print num_regions
 
 @jit(target='cpu', nopython=True)
 def forward_flow_verification(forward_flow, backward_flow, occlusions):
@@ -21,7 +24,8 @@ def forward_flow_verification(forward_flow, backward_flow, occlusions):
             vAx = forward_flow[y,x,1]
             vBy = backward_flow[y + vAy, x + vAx, 0]
             vBx = backward_flow[y + vAy, x + vAx, 1]
-
+            if y == 20 and x == 20:
+                print vAy, vAx, vBy, vBx
             if vAy == -vBy and vAx == -vBx:
                 occlusions[y,x,0] = 0
             else:
